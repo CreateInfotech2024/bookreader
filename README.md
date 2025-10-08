@@ -1,19 +1,20 @@
 # Book Reader
 
-A Flutter-based DOCX book reader application with advanced viewing features and proper formatting preservation.
+A Flutter-based DOCX book reader application with multi-page viewing and text navigation.
 
 ## Features
 
 ✨ **Core Features:**
-- 📄 **DOCX document viewing** with proper formatting preservation
-- 🎨 **Full formatting support**: Bold, italic, underline, colors, font sizes
-- 🖼️ **Images**: Embedded images from DOCX files are extracted and displayed
+- 📄 **DOCX document viewing** as plain text
+- 📖 **Multi-page view**: Content split into pages (~1000 characters per page)
+- 👉 **Page navigation**: Swipe left/right or use arrow buttons
+- 🎬 **3D page flip animation**: Smooth page transitions with perspective effects
 - 🔍 **Full-text search** within documents
 - 🔎 **Zoom controls** (zoom in, zoom out, reset) - 0.5x to 3.0x
 - 📱 **Responsive design** for different screen sizes
-- 🖥️ **Fullscreen mode**
+- 🖥️ **Fullscreen mode** with floating toolbar
 - ✅ **Text selection support** - select and copy text from documents
-- 📑 **Scrollable content** - smooth reading experience
+- 🔢 **Go to page**: Jump to specific page numbers
 
 ## Getting Started
 
@@ -59,68 +60,84 @@ flutter:
 ```
 
 ### Controls
-- **Menu Icon**: Navigate or view document info
-- **Search Icon**: Search for text in the document
+- **Menu Icon**: Go to specific page number
+- **Search Icon**: Search for text across all pages
 - **Zoom +/-**: Increase/decrease zoom level (0.5x - 3.0x)
 - **Reset**: Reset zoom to default (1.0x)
-- **Fullscreen**: Toggle fullscreen mode
+- **Fullscreen**: Toggle fullscreen mode with floating toolbar
 - **Reload**: Reload the document
+- **◀️ ▶️**: Navigate to previous/next page
+- **Swipe**: Swipe left for next page, right for previous page
 
 ## How It Works
 
 ### DOCX Processing Pipeline
 1. **Load DOCX**: Read DOCX file as ZIP archive from assets
-2. **Extract Content**: Parse `word/document.xml` for text and formatting
-3. **Extract Images**: Extract images from `word/media/` folder
-4. **Convert to HTML**: Transform XML structure to HTML with CSS styling
-5. **Render**: Display HTML with `flutter_widget_from_html` package
+2. **Extract Content**: Parse `word/document.xml` for text content
+3. **Extract Plain Text**: Get text from XML without formatting tags
+4. **Split into Pages**: Divide text into ~1000 character pages at paragraph boundaries
+5. **Render**: Display pages with native Flutter `Text` widget in `PageView`
 
-### Formatting Preserved
-- ✅ **Text Styles**: Bold, italic, underline
-- ✅ **Colors**: Text colors (RGB/Hex)
-- ✅ **Font Sizes**: Customized font sizes
-- ✅ **Paragraphs**: Proper paragraph spacing
-- ✅ **Structure**: Document hierarchy maintained
+### Display Features
+- ✅ **Plain Text**: Clean text display without HTML rendering
+- ✅ **Multi-Page**: Automatic page splitting at paragraph boundaries
+- ✅ **Page Navigation**: Smooth swipe or button navigation between pages
+- ✅ **Text Selection**: Native text selection and copy support
+- ✅ **3D Animation**: Page flip animation with perspective transforms
+- ✅ **Search**: Find text across all pages with automatic navigation
 
 ## Dependencies
 
-- `flutter_widget_from_html`: HTML rendering with CSS support
 - `archive`: ZIP file handling for DOCX extraction
 - `xml`: XML parsing for document.xml
-- `flutter_inappwebview`: WebView support
 - `path_provider`: File system access
-- `flutter_colorpicker`: Color selection UI
+- `flutter_colorpicker`: Color selection UI (for future features)
 - `shared_preferences`: Local data persistence
 
 ## Project Structure
 
 ```
 lib/
-├── main.dart           # Main application file with DOCX viewer
+├── main.dart                      # Main application file with DOCX viewer
 assets/
 ├── documents/
-│   └── book.docx      # Default DOCX document
-├── images/            # Image assets
-└── book1.pdf          # Legacy PDF file (not used)
+│   └── book.docx                  # Default DOCX document
+└── images/                        # Image assets
+docs/
+├── USAGE_GUIDE.md                 # Complete usage guide
+├── REMOVE_HTML_WIDGET_CHANGES.md  # Summary of recent changes
+└── BEFORE_AFTER_COMPARISON.md     # Architecture comparison
 ```
+
+## Documentation
+
+For more detailed information, see:
+- **[USAGE_GUIDE.md](USAGE_GUIDE.md)**: Complete guide on using the app, customization, and troubleshooting
+- **[REMOVE_HTML_WIDGET_CHANGES.md](REMOVE_HTML_WIDGET_CHANGES.md)**: Summary of changes from HTML to plain text rendering
+- **[BEFORE_AFTER_COMPARISON.md](BEFORE_AFTER_COMPARISON.md)**: Technical comparison of old vs new architecture
 
 ## Technical Details
 
 ### DOCX Format
 DOCX files are ZIP archives containing:
-- `word/document.xml`: Main document content
-- `word/media/`: Embedded images
-- `word/styles.xml`: Styling information
+- `word/document.xml`: Main document content (text extracted from here)
+- `word/media/`: Embedded images (not currently displayed)
+- `word/styles.xml`: Styling information (not currently used)
 - `word/_rels/`: Relationship mappings
 
-### HTML Conversion
-The app converts DOCX XML to HTML:
-- Paragraphs (`<w:p>`) → `<p>` tags
-- Text runs (`<w:r>`) → Styled `<span>` tags
-- Formatting properties (`<w:rPr>`) → CSS styles
-- Bold (`<w:b>`) → `<strong>`
-- Italic (`<w:i>`) → `<em>`
-- Underline (`<w:u>`) → `<u>`
+### Plain Text Extraction
+The app extracts plain text from DOCX XML:
+- Paragraphs (`<w:p>`) → Extract text + add `\n\n`
+- Text runs (`<w:r>`) → Extract inner text
+- Text elements (`<w:t>`) → Get text content
+- Formatting tags are ignored (simplified display)
+
+### Page Splitting Algorithm
+Content is split into pages intelligently:
+- Target: ~1000 characters per page
+- Respects paragraph boundaries (no mid-paragraph breaks)
+- Creates array of text pages for PageView
+- Each page is independently scrollable and zoomable
 
 ## Contributing
 

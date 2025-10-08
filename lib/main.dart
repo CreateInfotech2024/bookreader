@@ -1271,75 +1271,18 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class BookPage {
-  final String? title;
-  final String content;
-  final String? videoUrl;
-  final List<String> images;
-
-  BookPage({
-    this.title,
-    required this.content,
-    this.videoUrl,
-    this.images = const [],
-  });
-}
-
-class Highlight {
-  final String text;
-  final Color color;
-  final int startIndex;
-  final int endIndex;
-  final int pageIndex;
-
-  Highlight({
-    required this.text,
-    required this.color,
-    required this.startIndex,
-    required this.endIndex,
-    required this.pageIndex,
-  });
-}
-
-class StickyNote {
-  final String text;
-  final Offset position;
-  final int pageIndex;
-  final String id;
-
-  StickyNote({
-    required this.text,
-    required this.position,
-    required this.pageIndex,
-    required this.id,
-  });
-}
-
 class BookReaderScreen extends StatefulWidget {
   @override
   _BookReaderScreenState createState() => _BookReaderScreenState();
 }
 
 class _BookReaderScreenState extends State<BookReaderScreen> {
-  PageController _pageController = PageController();
-  TransformationController _transformationController =
-  TransformationController();
-
   int _currentPageIndex = 0;
   bool _isFullscreen = false;
   bool _showToolbar = true;
-  bool _highlightMode = false;
-  List<Highlight> _highlights = [];
-  List<StickyNote> _stickyNotes = [];
   String _searchQuery = '';
-  bool _isSearching = false;
-  bool _isAddingNote = false;
-  Offset? _pendingNotePosition;
-  Color _selectedHighlightColor = Colors.yellow;
   bool _isLoading = true;
   String? _loadedFileName;
-
-  List<BookPage> _pages = [];
 
   // PDF path in assets
   final String assetPdfPath = 'assets/book1.pdf';
@@ -1356,8 +1299,6 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
 
   @override
   void dispose() {
-    _pageController.dispose();
-    _transformationController.dispose();
     _pdfViewerController.dispose();
     super.dispose();
   }
@@ -1433,20 +1374,7 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
     }
   }
 
-  void _toggleHighlightMode() {
-    setState(() {
-      _highlightMode = !_highlightMode;
-    });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(_highlightMode
-            ? 'Text selection enabled - Use PDF viewer selection'
-            : 'Text selection disabled'),
-        duration: Duration(seconds: 2),
-      ),
-    );
-  }
 
 
 

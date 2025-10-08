@@ -1250,8 +1250,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:video_player/video_player.dart';
-import 'package:docx_to_text/docx_to_text.dart';
+import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 
 void main() {
   runApp(MyApp());
@@ -1272,292 +1271,92 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class BookPage {
-  final String? title;
-  final String content;
-  final String? videoUrl;
-  final List<String> images;
-
-  BookPage({
-    this.title,
-    required this.content,
-    this.videoUrl,
-    this.images = const [],
-  });
-}
-
-class Highlight {
-  final String text;
-  final Color color;
-  final int startIndex;
-  final int endIndex;
-  final int pageIndex;
-
-  Highlight({
-    required this.text,
-    required this.color,
-    required this.startIndex,
-    required this.endIndex,
-    required this.pageIndex,
-  });
-}
-
-class StickyNote {
-  final String text;
-  final Offset position;
-  final int pageIndex;
-  final String id;
-
-  StickyNote({
-    required this.text,
-    required this.position,
-    required this.pageIndex,
-    required this.id,
-  });
-}
-
 class BookReaderScreen extends StatefulWidget {
   @override
   _BookReaderScreenState createState() => _BookReaderScreenState();
 }
 
 class _BookReaderScreenState extends State<BookReaderScreen> {
-  PageController _pageController = PageController();
-  TransformationController _transformationController =
-  TransformationController();
-
   int _currentPageIndex = 0;
   bool _isFullscreen = false;
   bool _showToolbar = true;
-  bool _highlightMode = false;
-  List<Highlight> _highlights = [];
-  List<StickyNote> _stickyNotes = [];
   String _searchQuery = '';
-  bool _isSearching = false;
-  bool _isAddingNote = false;
-  Offset? _pendingNotePosition;
-  Color _selectedHighlightColor = Colors.yellow;
   bool _isLoading = true;
   String? _loadedFileName;
 
-  List<BookPage> _pages = [];
-
-  late VideoPlayerController _videoController;
-  bool _isVideoInitialized = false;
-
-  // આ path તમારી DOCX file નો છે - તમારે બદલવો પડશે
-  final String assetDocxPath = 'assets/documents/book.docx';
+  // PDF path in assets
+  final String assetPdfPath = 'assets/book1.pdf';
+  
+  // PDF viewer controller
+  late PdfViewerController _pdfViewerController;
 
   @override
   void initState() {
     super.initState();
-    _loadDocumentFromAssets();
+    _pdfViewerController = PdfViewerController();
+    _checkPdfExists();
   }
 
   @override
   void dispose() {
-    _pageController.dispose();
-    _transformationController.dispose();
-    if (_isVideoInitialized) {
-      _videoController.dispose();
-    }
+    _pdfViewerController.dispose();
     super.dispose();
   }
 
-  Future<void> _loadDocumentFromAssets() async {
+  Future<void> _checkPdfExists() async {
     try {
       setState(() {
         _isLoading = true;
       });
 
-      // Load DOCX file from assets
-      final ByteData data = await rootBundle.load(assetDocxPath);
-      final Uint8List bytes = data.buffer.asUint8List();
-
-      // Extract text from DOCX
-      final text = await docxToText(bytes);
-
-      if (text != null && text.isNotEmpty) {
-        // Split content into pages
-        List<BookPage> newPages = _splitTextIntoPages(text);
-
-        setState(() {
-          _pages = newPages;
-          _loadedFileName = assetDocxPath.split('/').last;
-          _currentPageIndex = 0;
-        });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Document loaded successfully: $_loadedFileName'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 2),
-          ),
-        );
-      } else {
-        throw Exception('Empty document');
-      }
-    } catch (e) {
-      print('Error loading document: $e');
-      // If error, load default content
-      _loadDefaultContent();
+      // Check if PDF file exists in assets
+      await rootBundle.load(assetPdfPath);
+      
+      setState(() {
+        _loadedFileName = assetPdfPath.split('/').last;
+        _isLoading = false;
+      });
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error loading document. Please check assets path.'),
+          content: Text('Document loaded successfully: $_loadedFileName'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      print('Error loading document: $e');
+      setState(() {
+        _isLoading = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error loading PDF. Please check assets path.'),
           backgroundColor: Colors.orange,
           duration: Duration(seconds: 3),
         ),
       );
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
     }
   }
 
-  void _loadDefaultContent() {
-    setState(() {
-      _pages = [
-        BookPage(
-          title: "Welcome to Book Reader",
-          content:
-          "Document not found in assets.\n\nPlease ensure:\n\n1. Your DOCX file is in assets/documents/ folder\n\n2. pubspec.yaml contains:\n   assets:\n     - assets/documents/\n\n3. Update 'assetDocxPath' variable in code with your file name\n\nFeatures:\n• Highlight text\n• Add sticky notes\n• Search content\n• Zoom in/out\n• Table of contents\n• Fullscreen mode",
-        ),
-      ];
-      _isLoading = false;
-    });
-  }
 
-  List<BookPage> _splitTextIntoPages(String text) {
-    List<BookPage> pages = [];
-
-    // Split by page breaks or form feeds
-    List<String> docPages = text.split(RegExp(r'\f|\x0C'));
-
-    for (int i = 0; i < docPages.length; i++) {
-      String pageContent = docPages[i].trim();
-      if (pageContent.isEmpty) continue;
-
-      // Check if this is a table of contents page
-      bool isTOC = pageContent.toUpperCase().contains('TABLE OF CONTENTS') ||
-          pageContent.toUpperCase().contains('CONTENTS');
-
-      String? title;
-      String content = pageContent;
-
-      // Extract title if present
-      List<String> lines = pageContent.split('\n');
-      if (lines.isNotEmpty && lines[0].trim().length < 100) {
-        String firstLine = lines[0].trim();
-        bool isTitle = firstLine.toUpperCase() == firstLine ||
-            firstLine.contains('CHAPTER') ||
-            firstLine.contains('TABLE OF CONTENTS');
-
-        if (isTitle) {
-          title = firstLine;
-          content = lines.sublist(1).join('\n').trim();
-        }
-      }
-
-      pages.add(BookPage(
-        title: title,
-        content: content,
-      ));
-    }
-
-    // If no page breaks found, split by content sections
-    if (pages.isEmpty) {
-      List<String> sections = text.split(RegExp(r'\n\n+'));
-      String currentPage = '';
-      String? currentTitle;
-      int wordsPerPage = 500;
-
-      for (String section in sections) {
-        section = section.trim();
-        if (section.isEmpty) continue;
-
-        bool mightBeTitle = (section.length < 100 &&
-            section.split('\n').length == 1) ||
-            section.toUpperCase().contains('CHAPTER') ||
-            section.toUpperCase().contains('TABLE OF CONTENTS');
-
-        if (mightBeTitle && currentPage.isEmpty) {
-          currentTitle = section;
-          continue;
-        }
-
-        if (currentPage.isEmpty) {
-          currentPage = section;
-        } else {
-          currentPage += '\n\n' + section;
-        }
-
-        int wordCount = currentPage.split(RegExp(r'\s+')).length;
-        if (wordCount >= wordsPerPage) {
-          pages.add(BookPage(
-            title: currentTitle,
-            content: currentPage.trim(),
-          ));
-          currentPage = '';
-          currentTitle = null;
-        }
-      }
-
-      if (currentPage.isNotEmpty) {
-        pages.add(BookPage(
-          title: currentTitle,
-          content: currentPage.trim(),
-        ));
-      }
-    }
-
-    // Fallback: split by character length
-    if (pages.isEmpty) {
-      final int charsPerPage = 2500;
-      int start = 0;
-      int pageNum = 1;
-
-      while (start < text.length) {
-        int end = (start + charsPerPage < text.length)
-            ? start + charsPerPage
-            : text.length;
-
-        if (end < text.length) {
-          int breakPoint = text.lastIndexOf('\n', end);
-          if (breakPoint > start && breakPoint < end) {
-            end = breakPoint;
-          }
-        }
-
-        pages.add(BookPage(
-          title: 'Page $pageNum',
-          content: text.substring(start, end).trim(),
-        ));
-
-        start = end;
-        pageNum++;
-      }
-    }
-
-    return pages;
-  }
 
   // Zoom functions
   void _resetZoom() {
-    _transformationController.value = Matrix4.identity();
+    _pdfViewerController.zoomLevel = 1.0;
   }
 
   void _zoomIn() {
-    final Matrix4 matrix = _transformationController.value.clone();
-    matrix.scale(1.2);
-    _transformationController.value = matrix;
+    if (_pdfViewerController.zoomLevel < 3.0) {
+      _pdfViewerController.zoomLevel += 0.25;
+    }
   }
 
   void _zoomOut() {
-    final Matrix4 matrix = _transformationController.value.clone();
-    matrix.scale(0.8);
-    _transformationController.value = matrix;
+    if (_pdfViewerController.zoomLevel > 0.5) {
+      _pdfViewerController.zoomLevel -= 0.25;
+    }
   }
 
   void _toggleFullscreen() {
@@ -1575,93 +1374,45 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
     }
   }
 
-  void _toggleHighlightMode() {
-    setState(() {
-      _highlightMode = !_highlightMode;
-    });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(_highlightMode
-            ? 'Highlight mode ON - Select text to highlight'
-            : 'Highlight mode OFF'),
-        duration: Duration(seconds: 2),
-      ),
-    );
-  }
 
-  void _addHighlight(String selectedText, int startIndex, int endIndex) {
-    if (!_highlightMode) return;
 
-    setState(() {
-      _highlights.add(
-        Highlight(
-          text: selectedText,
-          color: _selectedHighlightColor,
-          startIndex: startIndex,
-          endIndex: endIndex,
-          pageIndex: _currentPageIndex,
-        ),
-      );
-    });
-  }
-
-  void _addStickyNote(Offset position, String noteText) {
-    setState(() {
-      _stickyNotes.add(
-        StickyNote(
-          text: noteText,
-          position: position,
-          pageIndex: _currentPageIndex,
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-        ),
-      );
-    });
-  }
 
   void _showTableOfContents() {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Table of Contents'),
+        title: Text('Go to Page'),
         content: Container(
-          width: double.maxFinite,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: _pages.length,
-            itemBuilder: (context, index) {
-              String displayTitle = _pages[index].title ?? "Page ${index + 1}";
-              String preview = _pages[index].content.length > 50
-                  ? _pages[index].content.substring(0, 50) + '...'
-                  : _pages[index].content;
-
-              return ListTile(
-                leading: CircleAvatar(
-                  child: Text('${index + 1}'),
-                  backgroundColor: Colors.blue,
+          width: 300,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Enter page number to navigate:'),
+              SizedBox(height: 16),
+              TextField(
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  hintText: 'Page number',
+                  border: OutlineInputBorder(),
                 ),
-                title: Text(
-                  displayTitle,
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                subtitle: Text(
-                  preview,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 12),
-                ),
-                onTap: () {
-                  Navigator.pop(context);
-                  _pageController.animateToPage(
-                    index,
-                    duration: Duration(milliseconds: 300),
-                    curve: Curves.easeInOut,
-                  );
+                onSubmitted: (value) {
+                  int? pageNum = int.tryParse(value);
+                  if (pageNum != null && pageNum > 0) {
+                    Navigator.pop(context);
+                    _pdfViewerController.jumpToPage(pageNum);
+                  }
                 },
-              );
-            },
+              ),
+            ],
           ),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel'),
+          ),
+        ],
       ),
     );
   }
@@ -1703,69 +1454,18 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
   void _performSearch() {
     if (_searchQuery.isEmpty) return;
 
-    for (int i = 0; i < _pages.length; i++) {
-      if (_pages[i].content.toLowerCase().contains(
-        _searchQuery.toLowerCase(),
-      )) {
-        _pageController.animateToPage(
-          i,
-          duration: Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-        );
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Found on page ${i + 1}'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-        return;
-      }
-    }
+    // Perform search in PDF
+    _pdfViewerController.searchText(_searchQuery);
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('No results found for "$_searchQuery"'),
-        backgroundColor: Colors.orange,
+        content: Text('Searching for "$_searchQuery"...'),
+        duration: Duration(seconds: 2),
       ),
     );
   }
 
-  Widget _buildHighlightColorPicker() {
-    final colors = [
-      Colors.yellow,
-      Colors.green,
-      Colors.blue,
-      Colors.pink,
-      Colors.orange,
-    ];
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: colors
-          .map(
-            (color) => GestureDetector(
-          onTap: () => setState(() => _selectedHighlightColor = color),
-          child: Container(
-            margin: EdgeInsets.symmetric(horizontal: 4),
-            width: 30,
-            height: 30,
-            decoration: BoxDecoration(
-              color: color,
-              border: Border.all(
-                color: _selectedHighlightColor == color
-                    ? Colors.black
-                    : Colors.grey,
-                width: _selectedHighlightColor == color ? 2 : 1,
-              ),
-              borderRadius: BorderRadius.circular(15),
-            ),
-          ),
-        ),
-      )
-          .toList(),
-    );
-  }
 
   Widget _buildToolbar() {
     if (!_showToolbar) return SizedBox.shrink();
@@ -1800,24 +1500,7 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
                         tooltip: 'Search',
                         padding: EdgeInsets.all(isSmallScreen ? 8 : 12),
                       ),
-                      IconButton(
-                        icon: Icon(
-                          Icons.highlight,
-                          color: _highlightMode ? Colors.orange : null,
-                          size: iconSize,
-                        ),
-                        onPressed: _toggleHighlightMode,
-                        tooltip: 'Toggle Highlight Mode',
-                        padding: EdgeInsets.all(isSmallScreen ? 8 : 12),
-                      ),
-                      IconButton(
-                        icon: Icon(Icons.note_add, size: iconSize),
-                        onPressed: () {
-                          _showAddNoteDialog(Offset(100, 100));
-                        },
-                        tooltip: 'Add Note',
-                        padding: EdgeInsets.all(isSmallScreen ? 8 : 12),
-                      ),
+
                       IconButton(
                         icon: Icon(Icons.zoom_out, size: iconSize),
                         onPressed: _zoomOut,
@@ -1838,11 +1521,10 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
                       ),
                       IconButton(
                         icon: Icon(Icons.refresh_outlined, size: iconSize),
-                        onPressed: _loadDocumentFromAssets,
+                        onPressed: _checkPdfExists,
                         tooltip: 'Reload Document',
                         padding: EdgeInsets.all(isSmallScreen ? 8 : 12),
                       ),
-                      _buildHighlightColorPicker(),
                     ],
                   ),
                 ),
@@ -1860,7 +1542,9 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
               Padding(
                 padding: EdgeInsets.symmetric(horizontal: 4),
                 child: Text(
-                  '${_currentPageIndex + 1}/${_pages.length}',
+                  _pdfViewerController.pageCount > 0
+                      ? '${_currentPageIndex + 1}/${_pdfViewerController.pageCount}'
+                      : 'Loading...',
                   style: TextStyle(
                       fontSize: fontSize, fontWeight: FontWeight.bold),
                 ),
@@ -1910,14 +1594,6 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
               tooltip: 'Reset Zoom',
             ),
             IconButton(
-              icon: Icon(
-                Icons.highlight,
-                color: _highlightMode ? Colors.orange : Colors.white,
-              ),
-              onPressed: _toggleHighlightMode,
-              tooltip: 'Toggle Highlight Mode',
-            ),
-            IconButton(
               icon: Icon(Icons.fullscreen_exit, color: Colors.white),
               onPressed: _toggleFullscreen,
               tooltip: 'Exit Fullscreen',
@@ -1933,343 +1609,11 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
     );
   }
 
-  void _showAddNoteDialog([Offset? position]) {
-    String noteText = '';
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Add Sticky Note'),
-        content: TextField(
-          onChanged: (value) => noteText = value,
-          decoration: InputDecoration(
-            hintText: 'Enter note...',
-            border: OutlineInputBorder(),
-          ),
-          maxLines: 3,
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              if (noteText.isNotEmpty) {
-                _addStickyNote(position ?? Offset(100, 100), noteText);
-              }
-            },
-            child: Text('Add'),
-          ),
-        ],
-      ),
-    );
-  }
 
-  Widget _buildZoomableContent(Widget child) {
-    return InteractiveViewer(
-      transformationController: _transformationController,
-      boundaryMargin: EdgeInsets.all(20),
-      minScale: 0.5,
-      maxScale: 4.0,
-      constrained: true,
-      child: GestureDetector(
-        onTapUp: (details) {
-          if (_isAddingNote) {
-            _showAddNoteDialog(details.localPosition);
-          }
-        },
-        child: child,
-      ),
-    );
-  }
 
-  List<TextSpan> _buildHighlightedTextSpansWithSize(
-      String text, int pageIndex, double fontSize) {
-    List<TextSpan> spans = [];
-    List<Highlight> pageHighlights =
-    _highlights.where((h) => h.pageIndex == pageIndex).toList();
 
-    pageHighlights.sort((a, b) => a.startIndex.compareTo(b.startIndex));
 
-    int currentIndex = 0;
 
-    for (Highlight highlight in pageHighlights) {
-      if (currentIndex < highlight.startIndex) {
-        spans.add(TextSpan(
-          text: text.substring(currentIndex, highlight.startIndex),
-          style:
-          TextStyle(fontSize: fontSize, height: 1.5, color: Colors.black),
-        ));
-      }
-
-      spans.add(TextSpan(
-        text: text.substring(highlight.startIndex, highlight.endIndex),
-        style: TextStyle(
-          fontSize: fontSize,
-          height: 1.5,
-          color: Colors.black,
-          backgroundColor: highlight.color.withOpacity(0.3),
-        ),
-      ));
-
-      currentIndex = highlight.endIndex;
-    }
-
-    if (currentIndex < text.length) {
-      spans.add(TextSpan(
-        text: text.substring(currentIndex),
-        style: TextStyle(fontSize: fontSize, height: 1.5, color: Colors.black),
-      ));
-    }
-
-    return spans;
-  }
-
-  Widget _buildTableOfContentsText(String content, double fontSize) {
-    List<String> lines = content.split('\n');
-    List<Widget> widgets = [];
-
-    for (String line in lines) {
-      line = line.trimRight();
-      if (line.isEmpty) {
-        widgets.add(SizedBox(height: fontSize * 0.5));
-        continue;
-      }
-
-      // Check if it's a chapter heading or main section
-      bool isMainHeading = line.toUpperCase().contains('CHAPTER') ||
-          line.trim().startsWith('CHAPTER');
-
-      // Check if line has dots/periods (typical TOC format)
-      bool hasDots = line.contains('..') || line.contains('…');
-
-      // Extract content and page number
-      String displayText = line;
-      TextStyle style;
-
-      if (isMainHeading) {
-        // Main chapter headings - bold
-        style = TextStyle(
-          fontSize: fontSize,
-          fontWeight: FontWeight.bold,
-          height: 1.8,
-          letterSpacing: 0.5,
-        );
-      } else if (hasDots) {
-        // TOC lines with dots - use monospace font for alignment
-        // Replace multiple dots with single dots for better display
-        displayText = line.replaceAll(RegExp(r'\.{2,}'), '  ');
-        style = TextStyle(
-          fontSize: fontSize * 0.9,
-          fontFamily: 'Courier',
-          height: 1.6,
-          letterSpacing: 0.3,
-        );
-      } else {
-        // Regular text
-        style = TextStyle(
-          fontSize: fontSize * 0.9,
-          height: 1.6,
-        );
-      }
-
-      widgets.add(
-        Padding(
-          padding: EdgeInsets.only(
-            left: isMainHeading
-                ? 0
-                : (line.startsWith('  ') || line.startsWith('\t') ? 16 : 8),
-            bottom: isMainHeading ? 8 : 2,
-          ),
-          child: SelectableText(
-            displayText,
-            style: style,
-          ),
-        ),
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: widgets,
-    );
-  }
-
-  Widget _buildTextPage(BookPage page, int pageIndex) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final screenWidth = constraints.maxWidth;
-        final isSmallScreen = screenWidth < 360;
-        final isMediumScreen = screenWidth >= 360 && screenWidth < 600;
-
-        final titleFontSize =
-        isSmallScreen ? 16.0 : isMediumScreen ? 18.0 : 22.0;
-        final contentFontSize =
-        isSmallScreen ? 12.0 : isMediumScreen ? 14.0 : 16.0;
-        final padding = isSmallScreen ? 12.0 : isMediumScreen ? 16.0 : 20.0;
-        final spacing = isSmallScreen ? 8.0 : isMediumScreen ? 12.0 : 16.0;
-
-        // Check if this is a table of contents page
-        bool isTOC = (page.title != null &&
-            page.title!.toUpperCase().contains('TABLE OF CONTENTS')) ||
-            page.content.toUpperCase().contains('TABLE OF CONTENTS');
-
-        return _buildZoomableContent(
-          Container(
-            padding: EdgeInsets.all(padding),
-            color: Colors.white,
-            child: Stack(
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (page.title != null && page.title!.isNotEmpty)
-                      Center(
-                        child: Text(
-                          page.title!,
-                          style: TextStyle(
-                            fontSize: titleFontSize,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blue[800],
-                          ),
-                        ),
-                      ),
-                    if (page.title != null && page.title!.isNotEmpty)
-                      SizedBox(height: spacing * 2),
-                    Expanded(
-                      child: SingleChildScrollView(
-                        child: isTOC
-                            ? _buildTableOfContentsText(
-                            page.content, contentFontSize)
-                            : SelectableText.rich(
-                          TextSpan(
-                            children: _buildHighlightedTextSpansWithSize(
-                                page.content, pageIndex, contentFontSize),
-                          ),
-                          onSelectionChanged: (selection, cause) {
-                            if (selection.baseOffset !=
-                                selection.extentOffset &&
-                                _highlightMode) {
-                              String selectedText = page.content.substring(
-                                selection.baseOffset,
-                                selection.extentOffset,
-                              );
-                              _addHighlight(selectedText,
-                                  selection.baseOffset, selection.extentOffset);
-                            }
-                          },
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                ..._stickyNotes
-                    .where((note) => note.pageIndex == pageIndex)
-                    .map(
-                      (note) => Positioned(
-                    left: note.position.dx,
-                    top: note.position.dy,
-                    child: _buildStickyNote(note),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildStickyNote(StickyNote note) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final screenWidth = MediaQuery.of(context).size.width;
-        final isSmallScreen = screenWidth < 360;
-        final isMediumScreen = screenWidth >= 360 && screenWidth < 600;
-
-        final noteWidth =
-        isSmallScreen ? 120.0 : isMediumScreen ? 140.0 : 150.0;
-        final fontSize = isSmallScreen ? 10.0 : 12.0;
-        final iconSize = isSmallScreen ? 14.0 : 16.0;
-        final padding = isSmallScreen ? 6.0 : 8.0;
-
-        return Draggable(
-          feedback: Material(
-            color: Colors.transparent,
-            child: _buildNoteContainer(
-                note, noteWidth, fontSize, iconSize, padding),
-          ),
-          childWhenDragging: Opacity(
-            opacity: 0.5,
-            child:
-            _buildNoteContainer(note, noteWidth, fontSize, iconSize, padding),
-          ),
-          onDragEnd: (details) {
-            setState(() {
-              int index = _stickyNotes.indexWhere((n) => n.id == note.id);
-              if (index != -1) {
-                _stickyNotes[index] = StickyNote(
-                  text: note.text,
-                  position: details.offset,
-                  pageIndex: note.pageIndex,
-                  id: note.id,
-                );
-              }
-            });
-          },
-          child: _buildNoteContainer(note, noteWidth, fontSize, iconSize, padding),
-        );
-      },
-    );
-  }
-
-  Widget _buildNoteContainer(
-      StickyNote note, double width, double fontSize, double iconSize, double padding) {
-    return Container(
-      width: width,
-      padding: EdgeInsets.all(padding),
-      decoration: BoxDecoration(
-        color: Colors.yellow[200],
-        border: Border.all(color: Colors.orange),
-        borderRadius: BorderRadius.circular(4),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.3),
-            blurRadius: 4,
-            offset: Offset(2, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Icon(Icons.note, size: iconSize, color: Colors.orange[800]),
-              GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _stickyNotes.removeWhere((n) => n.id == note.id);
-                  });
-                },
-                child: Icon(Icons.close, size: iconSize, color: Colors.red),
-              ),
-            ],
-          ),
-          SizedBox(height: 4),
-          Text(
-            note.text,
-            style: TextStyle(fontSize: fontSize),
-            maxLines: 4,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -2301,20 +1645,19 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
                         });
                       }
                     },
-                    child: Center(
-                      child: PageView.builder(
-                        controller: _pageController,
-                        onPageChanged: (index) {
+                    child: Container(
+                      color: Colors.white,
+                      child: SfPdfViewer.asset(
+                        assetPdfPath,
+                        controller: _pdfViewerController,
+                        onPageChanged: (PdfPageChangedDetails details) {
                           setState(() {
-                            _currentPageIndex = index;
-                            _resetZoom();
+                            _currentPageIndex = details.newPageNumber - 1;
                           });
                         },
-                        itemCount: _pages.length,
-                        itemBuilder: (context, index) {
-                          final page = _pages[index];
-                          return _buildTextPage(page, index);
-                        },
+                        enableTextSelection: true,
+                        canShowScrollHead: true,
+                        canShowScrollStatus: true,
                       ),
                     ),
                   ),

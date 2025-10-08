@@ -11,20 +11,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:bookreader/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
+  testWidgets('BookReader app smoke test', (WidgetTester tester) async {
     // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+    await tester.pumpWidget(MyApp());
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    // Verify that the app loads
+    expect(find.byType(BookReaderScreen), findsOneWidget);
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
+    // Wait for the initial loading to complete
     await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    // Verify that toolbar buttons are present
+    expect(find.byIcon(Icons.menu), findsWidgets);
+    expect(find.byIcon(Icons.search), findsWidgets);
+    expect(find.byIcon(Icons.zoom_in), findsWidgets);
+    expect(find.byIcon(Icons.zoom_out), findsWidgets);
   });
 }

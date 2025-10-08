@@ -1523,6 +1523,26 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
     }
   }
 
+  void _goToPreviousPage() {
+    if (_currentPageIndex > 0 && _pages.length > 1) {
+      _pageController.animateToPage(
+        _currentPageIndex - 1,
+        duration: Duration(milliseconds: 400),
+        curve: Curves.easeInOut,
+      );
+    }
+  }
+
+  void _goToNextPage() {
+    if (_currentPageIndex < _pages.length - 1 && _pages.length > 1) {
+      _pageController.animateToPage(
+        _currentPageIndex + 1,
+        duration: Duration(milliseconds: 400),
+        curve: Curves.easeInOut,
+      );
+    }
+  }
+
 
 
 
@@ -1559,7 +1579,11 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
                   int? pageNum = int.tryParse(value);
                   if (pageNum != null && pageNum > 0 && pageNum <= _pages.length) {
                     Navigator.pop(context);
-                    _pageController.jumpToPage(pageNum - 1);
+                    _pageController.animateToPage(
+                      pageNum - 1,
+                      duration: Duration(milliseconds: 400),
+                      curve: Curves.easeInOut,
+                    );
                   }
                 },
               ),
@@ -1620,7 +1644,11 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
     for (int i = 0; i < _pages.length; i++) {
       if (_pages[i].toLowerCase().contains(searchLower)) {
         if (_pages.length > 1) {
-          _pageController.jumpToPage(i);
+          _pageController.animateToPage(
+            i,
+            duration: Duration(milliseconds: 400),
+            curve: Curves.easeInOut,
+          );
         }
         found = true;
         break;
@@ -1698,6 +1726,21 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
                         tooltip: 'Reload Document',
                         padding: EdgeInsets.all(isSmallScreen ? 8 : 12),
                       ),
+                      if (_pages.length > 1) ...[
+                        VerticalDivider(width: 1, thickness: 1),
+                        IconButton(
+                          icon: Icon(Icons.arrow_back_ios, size: iconSize),
+                          onPressed: _currentPageIndex > 0 ? _goToPreviousPage : null,
+                          tooltip: 'Previous Page',
+                          padding: EdgeInsets.all(isSmallScreen ? 8 : 12),
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.arrow_forward_ios, size: iconSize),
+                          onPressed: _currentPageIndex < _pages.length - 1 ? _goToNextPage : null,
+                          tooltip: 'Next Page',
+                          padding: EdgeInsets.all(isSmallScreen ? 8 : 12),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -1778,6 +1821,24 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
               onPressed: _showTableOfContents,
               tooltip: 'Table of Contents',
             ),
+            if (_pages.length > 1) ...[
+              Container(
+                width: 1,
+                height: 40,
+                color: Colors.white.withOpacity(0.3),
+                margin: EdgeInsets.symmetric(horizontal: 4),
+              ),
+              IconButton(
+                icon: Icon(Icons.arrow_back_ios, color: Colors.white),
+                onPressed: _currentPageIndex > 0 ? _goToPreviousPage : null,
+                tooltip: 'Previous Page',
+              ),
+              IconButton(
+                icon: Icon(Icons.arrow_forward_ios, color: Colors.white),
+                onPressed: _currentPageIndex < _pages.length - 1 ? _goToNextPage : null,
+                tooltip: 'Next Page',
+              ),
+            ],
           ],
         ),
       ),

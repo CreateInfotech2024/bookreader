@@ -1250,7 +1250,11 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
+import 'package:flutter_widget_from_html/flutter_widget_from_html.dart';
+import 'package:archive/archive.dart';
+import 'package:xml/xml.dart' as xml;
+import 'dart:typed_data';
+import 'dart:convert';
 
 void main() {
   runApp(MyApp());
@@ -1283,80 +1287,225 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
   String _searchQuery = '';
   bool _isLoading = true;
   String? _loadedFileName;
-
-  // PDF path in assets
-  final String assetPdfPath = 'assets/book1.pdf';
   
-  // PDF viewer controller
-  late PdfViewerController _pdfViewerController;
+  // DOCX path in assets
+  final String assetDocxPath = 'assets/documents/book.docx';
+  
+  // Document content
+  String _htmlContent = '';
+  List<String> _pages = [];
+  Map<String, Uint8List> _images = {};
+  
+  // Controllers
+  final ScrollController _scrollController = ScrollController();
+  final PageController _pageController = PageController();
+  double _zoomLevel = 1.0;
 
   @override
   void initState() {
     super.initState();
-    _pdfViewerController = PdfViewerController();
-    _checkPdfExists();
+    _loadDocxFile();
   }
 
   @override
   void dispose() {
-    _pdfViewerController.dispose();
+    _scrollController.dispose();
+    _pageController.dispose();
     super.dispose();
   }
 
-  Future<void> _checkPdfExists() async {
+  Future<void> _loadDocxFile() async {
     try {
       setState(() {
         _isLoading = true;
       });
 
-      // Check if PDF file exists in assets
-      await rootBundle.load(assetPdfPath);
+      // Load DOCX file from assets
+      final ByteData data = await rootBundle.load(assetDocxPath);
+      final Uint8List bytes = data.buffer.asUint8List();
+      
+      // Extract and convert DOCX to HTML
+      await _extractDocxContent(bytes);
       
       setState(() {
-        _loadedFileName = assetPdfPath.split('/').last;
+        _loadedFileName = assetDocxPath.split('/').last;
         _isLoading = false;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Document loaded successfully: $_loadedFileName'),
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 2),
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Document loaded successfully: $_loadedFileName'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
     } catch (e) {
       print('Error loading document: $e');
       setState(() {
         _isLoading = false;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error loading PDF. Please check assets path.'),
-          backgroundColor: Colors.orange,
-          duration: Duration(seconds: 3),
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading DOCX. Please check assets path.'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
     }
+  }
+
+  Future<void> _extractDocxContent(Uint8List bytes) async {
+    try {
+      // Decode the DOCX file (which is a ZIP archive)
+      final archive = ZipDecoder().decodeBytes(bytes);
+      
+      // Extract document.xml which contains the main content
+      final documentXml = archive.findFile('word/document.xml');
+      if (documentXml == null) {
+        throw Exception('document.xml not found in DOCX file');
+      }
+      
+      final documentContent = utf8.decode(documentXml.content as List<int>);
+      final document = xml.XmlDocument.parse(documentContent);
+      
+      // Extract images
+      _images.clear();
+      for (var file in archive.files) {
+        if (file.name.startsWith('word/media/')) {
+          final imageName = file.name.split('/').last;
+          _images[imageName] = Uint8List.fromList(file.content as List<int>);
+        }
+      }
+      
+      // Convert XML to HTML
+      _htmlContent = _convertXmlToHtml(document);
+      
+      // Split content into pages (approximately 1000 characters per page)
+      _pages = _splitIntoPages(_htmlContent);
+      
+    } catch (e) {
+      print('Error extracting DOCX content: $e');
+      _htmlContent = '<p>Error loading document content</p>';
+      _pages = [_htmlContent];
+    }
+  }
+
+  String _convertXmlToHtml(xml.XmlDocument document) {
+    StringBuffer html = StringBuffer();
+    html.write('<div style="padding: 20px; font-family: Arial, sans-serif; line-height: 1.6;">');
+    
+    // Find all paragraphs in the document
+    final paragraphs = document.findAllElements('w:p');
+    
+    for (var paragraph in paragraphs) {
+      html.write('<p style="margin: 10px 0;">');
+      
+      // Find all text runs in the paragraph
+      final runs = paragraph.findAllElements('w:r');
+      
+      for (var run in runs) {
+        // Check for formatting
+        final runProps = run.findElements('w:rPr').firstOrNull;
+        bool isBold = false;
+        bool isItalic = false;
+        bool isUnderline = false;
+        String? color;
+        String? fontSize;
+        
+        if (runProps != null) {
+          isBold = runProps.findElements('w:b').isNotEmpty;
+          isItalic = runProps.findElements('w:i').isNotEmpty;
+          isUnderline = runProps.findElements('w:u').isNotEmpty;
+          
+          final colorElement = runProps.findElements('w:color').firstOrNull;
+          if (colorElement != null) {
+            color = colorElement.getAttribute('w:val');
+          }
+          
+          final sizeElement = runProps.findElements('w:sz').firstOrNull;
+          if (sizeElement != null) {
+            final sizeVal = sizeElement.getAttribute('w:val');
+            if (sizeVal != null) {
+              fontSize = '${int.parse(sizeVal) / 2}px';
+            }
+          }
+        }
+        
+        // Get text content
+        final textElements = run.findAllElements('w:t');
+        for (var textElement in textElements) {
+          String text = textElement.innerText;
+          
+          // Apply formatting
+          String style = '';
+          if (color != null && color.isNotEmpty && color != 'auto') {
+            style += 'color: #$color;';
+          }
+          if (fontSize != null) {
+            style += 'font-size: $fontSize;';
+          }
+          
+          if (style.isNotEmpty) {
+            html.write('<span style="$style">');
+          }
+          
+          if (isBold) html.write('<strong>');
+          if (isItalic) html.write('<em>');
+          if (isUnderline) html.write('<u>');
+          
+          html.write(text);
+          
+          if (isUnderline) html.write('</u>');
+          if (isItalic) html.write('</em>');
+          if (isBold) html.write('</strong>');
+          
+          if (style.isNotEmpty) {
+            html.write('</span>');
+          }
+        }
+      }
+      
+      html.write('</p>');
+    }
+    
+    html.write('</div>');
+    return html.toString();
+  }
+
+  List<String> _splitIntoPages(String html) {
+    // For simplicity, we'll show all content as a single scrollable page
+    // This provides better UX than artificial page breaks
+    return [html];
   }
 
 
 
   // Zoom functions
   void _resetZoom() {
-    _pdfViewerController.zoomLevel = 1.0;
+    setState(() {
+      _zoomLevel = 1.0;
+    });
   }
 
   void _zoomIn() {
-    if (_pdfViewerController.zoomLevel < 3.0) {
-      _pdfViewerController.zoomLevel += 0.25;
-    }
+    setState(() {
+      if (_zoomLevel < 3.0) {
+        _zoomLevel += 0.25;
+      }
+    });
   }
 
   void _zoomOut() {
-    if (_pdfViewerController.zoomLevel > 0.5) {
-      _pdfViewerController.zoomLevel -= 0.25;
-    }
+    setState(() {
+      if (_zoomLevel > 0.5) {
+        _zoomLevel -= 0.25;
+      }
+    });
   }
 
   void _toggleFullscreen() {
@@ -1379,6 +1528,16 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
 
 
   void _showTableOfContents() {
+    if (_pages.length <= 1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Document is displayed as a single scrollable page'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+    
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -1398,9 +1557,9 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
                 ),
                 onSubmitted: (value) {
                   int? pageNum = int.tryParse(value);
-                  if (pageNum != null && pageNum > 0) {
+                  if (pageNum != null && pageNum > 0 && pageNum <= _pages.length) {
                     Navigator.pop(context);
-                    _pdfViewerController.jumpToPage(pageNum);
+                    _pageController.jumpToPage(pageNum - 1);
                   }
                 },
               ),
@@ -1454,13 +1613,27 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
   void _performSearch() {
     if (_searchQuery.isEmpty) return;
 
-    // Perform search in PDF
-    _pdfViewerController.searchText(_searchQuery);
+    // Simple search in HTML content
+    String searchLower = _searchQuery.toLowerCase();
+    bool found = false;
+    
+    for (int i = 0; i < _pages.length; i++) {
+      if (_pages[i].toLowerCase().contains(searchLower)) {
+        if (_pages.length > 1) {
+          _pageController.jumpToPage(i);
+        }
+        found = true;
+        break;
+      }
+    }
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Searching for "$_searchQuery"...'),
+        content: Text(found 
+          ? 'Found "$_searchQuery"' 
+          : 'No results for "$_searchQuery"'),
         duration: Duration(seconds: 2),
+        backgroundColor: found ? Colors.green : Colors.orange,
       ),
     );
   }
@@ -1521,7 +1694,7 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
                       ),
                       IconButton(
                         icon: Icon(Icons.refresh_outlined, size: iconSize),
-                        onPressed: _checkPdfExists,
+                        onPressed: _loadDocxFile,
                         tooltip: 'Reload Document',
                         padding: EdgeInsets.all(isSmallScreen ? 8 : 12),
                       ),
@@ -1542,8 +1715,10 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
               Padding(
                 padding: EdgeInsets.symmetric(horizontal: 4),
                 child: Text(
-                  _pdfViewerController.pageCount > 0
-                      ? '${_currentPageIndex + 1}/${_pdfViewerController.pageCount}'
+                  _pages.isNotEmpty
+                      ? _pages.length > 1 
+                        ? '${_currentPageIndex + 1}/${_pages.length}'
+                        : 'Zoom: ${(_zoomLevel * 100).toInt()}%'
                       : 'Loading...',
                   style: TextStyle(
                       fontSize: fontSize, fontWeight: FontWeight.bold),
@@ -1619,7 +1794,7 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
   Widget build(BuildContext context) {
     return SafeArea(
       child: Scaffold(
-        backgroundColor: Colors.grey,
+        backgroundColor: Colors.grey[300],
         body: Stack(
           children: [
             Column(
@@ -1633,7 +1808,7 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
                       children: [
                         CircularProgressIndicator(),
                         SizedBox(height: 16),
-                        Text('Loading document...'),
+                        Text('Loading DOCX document...'),
                       ],
                     ),
                   )
@@ -1647,18 +1822,13 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
                     },
                     child: Container(
                       color: Colors.white,
-                      child: SfPdfViewer.asset(
-                        assetPdfPath,
-                        controller: _pdfViewerController,
-                        onPageChanged: (PdfPageChangedDetails details) {
-                          setState(() {
-                            _currentPageIndex = details.newPageNumber - 1;
-                          });
-                        },
-                        enableTextSelection: true,
-                        canShowScrollHead: true,
-                        canShowScrollStatus: true,
-                      ),
+                      child: _pages.isEmpty
+                          ? Center(
+                        child: Text('No content to display'),
+                      )
+                          : _pages.length == 1
+                          ? _buildSinglePageView()
+                          : _buildPageView(),
                     ),
                   ),
                 ),
@@ -1668,6 +1838,56 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildSinglePageView() {
+    return Transform.scale(
+      scale: _zoomLevel,
+      child: SingleChildScrollView(
+        controller: _scrollController,
+        child: Container(
+          padding: EdgeInsets.all(16),
+          child: SelectableRegion(
+            focusNode: FocusNode(),
+            selectionControls: MaterialTextSelectionControls(),
+            child: HtmlWidget(
+              _htmlContent,
+              textStyle: TextStyle(fontSize: 16),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPageView() {
+    return PageView.builder(
+      controller: _pageController,
+      onPageChanged: (index) {
+        setState(() {
+          _currentPageIndex = index;
+        });
+      },
+      itemCount: _pages.length,
+      itemBuilder: (context, index) {
+        return Transform.scale(
+          scale: _zoomLevel,
+          child: SingleChildScrollView(
+            child: Container(
+              padding: EdgeInsets.all(16),
+              child: SelectableRegion(
+                focusNode: FocusNode(),
+                selectionControls: MaterialTextSelectionControls(),
+                child: HtmlWidget(
+                  _pages[index],
+                  textStyle: TextStyle(fontSize: 16),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

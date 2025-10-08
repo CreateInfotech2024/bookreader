@@ -1250,7 +1250,6 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_widget_from_html/flutter_widget_from_html.dart';
 import 'package:archive/archive.dart';
 import 'package:xml/xml.dart' as xml;
 import 'dart:typed_data';
@@ -1292,9 +1291,8 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
   final String assetDocxPath = 'assets/documents/book.docx';
   
   // Document content
-  String _htmlContent = '';
+  String _textContent = '';
   List<String> _pages = [];
-  Map<String, Uint8List> _images = {};
   
   // Controllers
   final ScrollController _scrollController = ScrollController();
@@ -1373,114 +1371,77 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
       final documentContent = utf8.decode(documentXml.content as List<int>);
       final document = xml.XmlDocument.parse(documentContent);
       
-      // Extract images
-      _images.clear();
-      for (var file in archive.files) {
-        if (file.name.startsWith('word/media/')) {
-          final imageName = file.name.split('/').last;
-          _images[imageName] = Uint8List.fromList(file.content as List<int>);
-        }
-      }
-      
-      // Convert XML to HTML
-      _htmlContent = _convertXmlToHtml(document);
+      // Extract plain text from XML
+      _textContent = _extractPlainText(document);
       
       // Split content into pages (approximately 1000 characters per page)
-      _pages = _splitIntoPages(_htmlContent);
+      _pages = _splitIntoPages(_textContent);
       
     } catch (e) {
       print('Error extracting DOCX content: $e');
-      _htmlContent = '<p>Error loading document content</p>';
-      _pages = [_htmlContent];
+      _textContent = 'Error loading document content';
+      _pages = [_textContent];
     }
   }
 
-  String _convertXmlToHtml(xml.XmlDocument document) {
-    StringBuffer html = StringBuffer();
-    html.write('<div style="padding: 20px; font-family: Arial, sans-serif; line-height: 1.6;">');
+  String _extractPlainText(xml.XmlDocument document) {
+    StringBuffer text = StringBuffer();
     
     // Find all paragraphs in the document
     final paragraphs = document.findAllElements('w:p');
     
     for (var paragraph in paragraphs) {
-      html.write('<p style="margin: 10px 0;">');
-      
       // Find all text runs in the paragraph
       final runs = paragraph.findAllElements('w:r');
       
       for (var run in runs) {
-        // Check for formatting
-        final runProps = run.findElements('w:rPr').firstOrNull;
-        bool isBold = false;
-        bool isItalic = false;
-        bool isUnderline = false;
-        String? color;
-        String? fontSize;
-        
-        if (runProps != null) {
-          isBold = runProps.findElements('w:b').isNotEmpty;
-          isItalic = runProps.findElements('w:i').isNotEmpty;
-          isUnderline = runProps.findElements('w:u').isNotEmpty;
-          
-          final colorElement = runProps.findElements('w:color').firstOrNull;
-          if (colorElement != null) {
-            color = colorElement.getAttribute('w:val');
-          }
-          
-          final sizeElement = runProps.findElements('w:sz').firstOrNull;
-          if (sizeElement != null) {
-            final sizeVal = sizeElement.getAttribute('w:val');
-            if (sizeVal != null) {
-              fontSize = '${int.parse(sizeVal) / 2}px';
-            }
-          }
-        }
-        
         // Get text content
         final textElements = run.findAllElements('w:t');
         for (var textElement in textElements) {
-          String text = textElement.innerText;
-          
-          // Apply formatting
-          String style = '';
-          if (color != null && color.isNotEmpty && color != 'auto') {
-            style += 'color: #$color;';
-          }
-          if (fontSize != null) {
-            style += 'font-size: $fontSize;';
-          }
-          
-          if (style.isNotEmpty) {
-            html.write('<span style="$style">');
-          }
-          
-          if (isBold) html.write('<strong>');
-          if (isItalic) html.write('<em>');
-          if (isUnderline) html.write('<u>');
-          
-          html.write(text);
-          
-          if (isUnderline) html.write('</u>');
-          if (isItalic) html.write('</em>');
-          if (isBold) html.write('</strong>');
-          
-          if (style.isNotEmpty) {
-            html.write('</span>');
-          }
+          text.write(textElement.innerText);
         }
       }
       
-      html.write('</p>');
+      // Add newline after each paragraph
+      text.write('\n\n');
     }
     
-    html.write('</div>');
-    return html.toString();
+    return text.toString().trim();
   }
 
-  List<String> _splitIntoPages(String html) {
-    // For simplicity, we'll show all content as a single scrollable page
-    // This provides better UX than artificial page breaks
-    return [html];
+  List<String> _splitIntoPages(String text) {
+    // Split content into pages of approximately 1000 characters each
+    List<String> pages = [];
+    const int charsPerPage = 1000;
+    
+    if (text.isEmpty) {
+      return ['No content available'];
+    }
+    
+    // Split by paragraphs first to avoid breaking in the middle of a paragraph
+    List<String> paragraphs = text.split('\n\n');
+    StringBuffer currentPage = StringBuffer();
+    int currentLength = 0;
+    
+    for (var paragraph in paragraphs) {
+      // If adding this paragraph would exceed the page limit and we already have content
+      if (currentLength + paragraph.length > charsPerPage && currentLength > 0) {
+        pages.add(currentPage.toString().trim());
+        currentPage.clear();
+        currentLength = 0;
+      }
+      
+      currentPage.write(paragraph);
+      currentPage.write('\n\n');
+      currentLength += paragraph.length + 2;
+    }
+    
+    // Add the last page if there's any content
+    if (currentPage.isNotEmpty) {
+      pages.add(currentPage.toString().trim());
+    }
+    
+    return pages.isEmpty ? ['No content available'] : pages;
   }
 
 
@@ -1524,7 +1485,7 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
   }
 
   void _goToPreviousPage() {
-    if (_currentPageIndex > 0 && _pages.length > 1) {
+    if (_currentPageIndex > 0) {
       _pageController.animateToPage(
         _currentPageIndex - 1,
         duration: Duration(milliseconds: 600),
@@ -1534,7 +1495,7 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
   }
 
   void _goToNextPage() {
-    if (_currentPageIndex < _pages.length - 1 && _pages.length > 1) {
+    if (_currentPageIndex < _pages.length - 1) {
       _pageController.animateToPage(
         _currentPageIndex + 1,
         duration: Duration(milliseconds: 600),
@@ -1548,16 +1509,6 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
 
 
   void _showTableOfContents() {
-    if (_pages.length <= 1) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Document is displayed as a single scrollable page'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-      return;
-    }
-    
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -1637,19 +1588,17 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
   void _performSearch() {
     if (_searchQuery.isEmpty) return;
 
-    // Simple search in HTML content
+    // Simple search in text content
     String searchLower = _searchQuery.toLowerCase();
     bool found = false;
     
     for (int i = 0; i < _pages.length; i++) {
       if (_pages[i].toLowerCase().contains(searchLower)) {
-        if (_pages.length > 1) {
-          _pageController.animateToPage(
-            i,
-            duration: Duration(milliseconds: 600),
-            curve: Curves.easeInOutCubic,
-          );
-        }
+        _pageController.animateToPage(
+          i,
+          duration: Duration(milliseconds: 600),
+          curve: Curves.easeInOutCubic,
+        );
         found = true;
         break;
       }
@@ -1821,24 +1770,22 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
               onPressed: _showTableOfContents,
               tooltip: 'Table of Contents',
             ),
-            if (_pages.length > 1) ...[
-              Container(
-                width: 1,
-                height: 40,
-                color: Colors.white.withOpacity(0.3),
-                margin: EdgeInsets.symmetric(horizontal: 4),
-              ),
-              IconButton(
-                icon: Icon(Icons.arrow_back_ios, color: Colors.white),
-                onPressed: _currentPageIndex > 0 ? _goToPreviousPage : null,
-                tooltip: 'Previous Page',
-              ),
-              IconButton(
-                icon: Icon(Icons.arrow_forward_ios, color: Colors.white),
-                onPressed: _currentPageIndex < _pages.length - 1 ? _goToNextPage : null,
-                tooltip: 'Next Page',
-              ),
-            ],
+            Container(
+              width: 1,
+              height: 40,
+              color: Colors.white.withOpacity(0.3),
+              margin: EdgeInsets.symmetric(horizontal: 4),
+            ),
+            IconButton(
+              icon: Icon(Icons.arrow_back_ios, color: Colors.white),
+              onPressed: _currentPageIndex > 0 ? _goToPreviousPage : null,
+              tooltip: 'Previous Page',
+            ),
+            IconButton(
+              icon: Icon(Icons.arrow_forward_ios, color: Colors.white),
+              onPressed: _currentPageIndex < _pages.length - 1 ? _goToNextPage : null,
+              tooltip: 'Next Page',
+            ),
           ],
         ),
       ),
@@ -1887,8 +1834,6 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
                           ? Center(
                         child: Text('No content to display'),
                       )
-                          : _pages.length == 1
-                          ? _buildSinglePageView()
                           : _buildPageView(),
                     ),
                   ),
@@ -1897,26 +1842,6 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
             ),
             _buildFloatingToolbar(),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSinglePageView() {
-    return Transform.scale(
-      scale: _zoomLevel,
-      child: SingleChildScrollView(
-        controller: _scrollController,
-        child: Container(
-          padding: EdgeInsets.all(16),
-          child: SelectableRegion(
-            focusNode: FocusNode(),
-            selectionControls: MaterialTextSelectionControls(),
-            child: HtmlWidget(
-              _htmlContent,
-              textStyle: TextStyle(fontSize: 16),
-            ),
-          ),
         ),
       ),
     );
@@ -1965,9 +1890,13 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
                     child: SelectableRegion(
                       focusNode: FocusNode(),
                       selectionControls: MaterialTextSelectionControls(),
-                      child: HtmlWidget(
+                      child: Text(
                         _pages[index],
-                        textStyle: TextStyle(fontSize: 16),
+                        style: TextStyle(
+                          fontSize: 16,
+                          height: 1.6,
+                          color: Colors.black87,
+                        ),
                       ),
                     ),
                   ),

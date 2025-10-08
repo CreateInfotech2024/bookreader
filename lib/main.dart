@@ -1527,8 +1527,8 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
     if (_currentPageIndex > 0 && _pages.length > 1) {
       _pageController.animateToPage(
         _currentPageIndex - 1,
-        duration: Duration(milliseconds: 400),
-        curve: Curves.easeInOut,
+        duration: Duration(milliseconds: 600),
+        curve: Curves.easeInOutCubic,
       );
     }
   }
@@ -1537,8 +1537,8 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
     if (_currentPageIndex < _pages.length - 1 && _pages.length > 1) {
       _pageController.animateToPage(
         _currentPageIndex + 1,
-        duration: Duration(milliseconds: 400),
-        curve: Curves.easeInOut,
+        duration: Duration(milliseconds: 600),
+        curve: Curves.easeInOutCubic,
       );
     }
   }
@@ -1581,8 +1581,8 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
                     Navigator.pop(context);
                     _pageController.animateToPage(
                       pageNum - 1,
-                      duration: Duration(milliseconds: 400),
-                      curve: Curves.easeInOut,
+                      duration: Duration(milliseconds: 600),
+                      curve: Curves.easeInOutCubic,
                     );
                   }
                 },
@@ -1646,8 +1646,8 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
         if (_pages.length > 1) {
           _pageController.animateToPage(
             i,
-            duration: Duration(milliseconds: 400),
-            curve: Curves.easeInOut,
+            duration: Duration(milliseconds: 600),
+            curve: Curves.easeInOutCubic,
           );
         }
         found = true;
@@ -1932,21 +1932,49 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
       },
       itemCount: _pages.length,
       itemBuilder: (context, index) {
-        return Transform.scale(
-          scale: _zoomLevel,
-          child: SingleChildScrollView(
-            child: Container(
-              padding: EdgeInsets.all(16),
-              child: SelectableRegion(
-                focusNode: FocusNode(),
-                selectionControls: MaterialTextSelectionControls(),
-                child: HtmlWidget(
-                  _pages[index],
-                  textStyle: TextStyle(fontSize: 16),
+        return AnimatedBuilder(
+          animation: _pageController,
+          builder: (context, child) {
+            double value = 0.0;
+            if (_pageController.position.haveDimensions) {
+              value = (_pageController.page ?? 0.0) - index;
+              value = (value * 0.5).clamp(-1, 1);
+            }
+            
+            // Create 3D page flip effect
+            return Transform(
+              transform: Matrix4.identity()
+                ..setEntry(3, 2, 0.001) // perspective
+                ..rotateY(value * 3.14159 / 6), // rotate around Y-axis
+              alignment: value > 0 ? Alignment.centerLeft : Alignment.centerRight,
+              child: Transform.scale(
+                scale: _zoomLevel,
+                child: SingleChildScrollView(
+                  child: Container(
+                    padding: EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.2),
+                          blurRadius: 10,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                    child: SelectableRegion(
+                      focusNode: FocusNode(),
+                      selectionControls: MaterialTextSelectionControls(),
+                      child: HtmlWidget(
+                        _pages[index],
+                        textStyle: TextStyle(fontSize: 16),
+                      ),
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ),
+            );
+          },
         );
       },
     );
